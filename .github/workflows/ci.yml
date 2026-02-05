@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        nvim-version: ['v0.9.0', 'v0.10.0', 'stable']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Neovim
+        run: |
+          if [ "${{ matrix.nvim-version }}" = "stable" ]; then
+            DOWNLOAD_URL="https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.appimage"
+          else
+            DOWNLOAD_URL="https://github.com/neovim/neovim/releases/download/${{ matrix.nvim-version }}/nvim.appimage"
+          fi
+
+          curl -L $DOWNLOAD_URL -o nvim.appimage
+          chmod +x nvim.appimage
+
+          # Extract AppImage instead of running directly
+          ./nvim.appimage --appimage-extract
+          sudo mv squashfs-root /usr/local/
+          sudo ln -sf /usr/local/squashfs-root/usr/bin/nvim /usr/local/bin/nvim
+
+      - name: Install plugin
+        run: |
+          mkdir -p ~/.local/share/nvim/site/pack/deps/start
+          ln -s $(pwd) ~/.local/share/nvim/site/pack/deps/start/context.nvim
+
+      - name: Run basic syntax check
+        run: |
+          nvim --headless -c "lua loadfile('lua/context/init.lua')()" -c "qa!"
+
+      - name: Test module loading
+        run: |
+          nvim --headless -c "lua require('context.config')" -c "qa!"
+          nvim --headless -c "lua require('context.selection')" -c "qa!"
+          nvim --headless -c "lua require('context.prompt')" -c "qa!"
+          nvim --headless -c "lua require('context.stream')" -c "qa!"
+          nvim --headless -c "lua require('context.job')" -c "qa!"
+          nvim --headless -c "lua require('context.providers')" -c "qa!"
+          nvim --headless -c "lua require('context.providers.anthropic')" -c "qa!"
+          nvim --headless -c "lua require('context.providers.openai')" -c "qa!"
+          nvim --headless -c "lua require('context.providers.openai_compat')" -c "qa!"
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install luacheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y luarocks
+          sudo luarocks install luacheck
+
+      - name: Run luacheck
+        run: |
+          luacheck lua/ --globals vim
