@@ -16,7 +16,7 @@ M.defaults = {
       max_tokens = 4096,
     },
     openai_compat = {
-      base_url = "http://localhost:11434/api",
+      base_url = "http://localhost:11434/v1",
       api_key = "",
       model = "llama3",
       max_tokens = 4096,
