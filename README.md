@@ -15,7 +15,7 @@ A Neovim plugin for AI interaction with scoped context: selected text, current l
       providers = {
         anthropic = {
           api_key = vim.env.ANTHROPIC_API_KEY,
-          model = "claude-sonnet-4-20250514", -- optional
+          model = "claude-sonnet-4-5", -- optional
         },
       },
     })
