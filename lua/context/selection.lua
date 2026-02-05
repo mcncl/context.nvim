@@ -25,23 +25,22 @@ local function get_visual_selection()
   local mode = vim.fn.visualmode()
 
   if mode == "v" then
-    -- Character-wise visual mode
+    -- Character-wise visual mode: trim to selection columns
     if #lines == 1 then
       lines[1] = string.sub(lines[1], start_col, end_col)
     else
       lines[1] = string.sub(lines[1], start_col)
       lines[#lines] = string.sub(lines[#lines], 1, end_col)
     end
-  elseif mode == "V" then
-    -- Line-wise visual mode - keep full lines
   elseif mode == "\22" then
-    -- Block visual mode (Ctrl-V)
+    -- Block visual mode (Ctrl-V): extract column range from each line
     local new_lines = {}
     for _, line in ipairs(lines) do
       table.insert(new_lines, string.sub(line, start_col, end_col))
     end
     lines = new_lines
   end
+  -- Line-wise visual (V): full lines are used as-is, no trimming needed
 
   return {
     text = table.concat(lines, "\n"),
