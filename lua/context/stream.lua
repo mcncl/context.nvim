@@ -4,19 +4,76 @@ local M = {}
 local job = require("context.job")
 local providers = require("context.providers")
 
+-- Namespace for extmarks
+local ns_id = nil
+
+local function ensure_namespace()
+  if not ns_id then
+    ns_id = vim.api.nvim_create_namespace("context_stream")
+  end
+  return ns_id
+end
+
 -- Active stream state
 local state = {
   bufnr = nil,
   accumulated_text = "",
-  context = nil, -- Store context to apply at stream end
+  context = nil, -- Original context for mode/col info
+  start_mark = nil, -- Extmark tracking selection start
+  end_mark = nil, -- Extmark tracking selection end
 }
 
 -- Clear the current state
 local function clear_state()
+  if state.bufnr and vim.api.nvim_buf_is_valid(state.bufnr) then
+    pcall(vim.api.nvim_buf_clear_namespace, state.bufnr, ensure_namespace(), 0, -1)
+  end
+
   state = {
     bufnr = nil,
     accumulated_text = "",
     context = nil,
+    start_mark = nil,
+    end_mark = nil,
+  }
+end
+
+-- Place extmarks at selection boundaries to track position through edits
+local function place_marks(bufnr, context)
+  local ns = ensure_namespace()
+  local start_line = context.start_line - 1 -- 0-indexed
+  local end_line = context.end_line - 1
+
+  state.start_mark = vim.api.nvim_buf_set_extmark(bufnr, ns, start_line, 0, {
+    right_gravity = false, -- Stays put if text is inserted at this position
+  })
+
+  -- End mark: place at the end of the last selected line
+  local end_lines = vim.api.nvim_buf_get_lines(bufnr, end_line, end_line + 1, false)
+  local end_col = end_lines[1] and #end_lines[1] or 0
+
+  state.end_mark = vim.api.nvim_buf_set_extmark(bufnr, ns, end_line, end_col, {
+    right_gravity = true, -- Moves right if text is inserted at this position
+  })
+end
+
+-- Read current positions from extmarks
+local function get_mark_positions()
+  if not state.bufnr or not state.start_mark or not state.end_mark then
+    return nil
+  end
+
+  local ns = ensure_namespace()
+  local start_pos = vim.api.nvim_buf_get_extmark_by_id(state.bufnr, ns, state.start_mark, {})
+  local end_pos = vim.api.nvim_buf_get_extmark_by_id(state.bufnr, ns, state.end_mark, {})
+
+  if not start_pos or #start_pos == 0 or not end_pos or #end_pos == 0 then
+    return nil
+  end
+
+  return {
+    start_line = start_pos[1], -- 0-indexed
+    end_line = end_pos[1],     -- 0-indexed
   }
 end
 
@@ -54,10 +111,16 @@ local function apply_result()
   end
 
   local bufnr = state.bufnr
-  local start_line = context.start_line - 1 -- Convert to 0-indexed
-  local end_line = context.end_line - 1
-  local start_col = context.start_col - 1
-  local end_col = context.end_col
+
+  -- Read actual positions from extmarks (safe against edits)
+  local marks = get_mark_positions()
+  if not marks then
+    vim.notify("Context: lost track of selection, aborting", vim.log.levels.WARN)
+    return
+  end
+
+  local start_line = marks.start_line
+  local end_line = marks.end_line
 
   -- Get content before and after selection
   local lines = vim.api.nvim_buf_get_lines(bufnr, start_line, end_line + 1, false)
@@ -65,6 +128,8 @@ local function apply_result()
   local after_text = ""
 
   if #lines > 0 then
+    local start_col = context.start_col - 1
+    local end_col = context.end_col
     before_text = string.sub(lines[1], 1, start_col)
     after_text = string.sub(lines[#lines], end_col + 1)
   end
@@ -96,12 +161,15 @@ function M.start(prompt, context, provider_name, config)
   -- Get the provider
   local provider = providers.get(provider_name)
   state.bufnr = vim.api.nvim_get_current_buf()
-  state.context = context -- Store context, don't delete yet
+  state.context = context
+
+  -- Place extmarks to track selection through edits
+  place_marks(state.bufnr, context)
 
   -- Build the request
   local request = provider.build_request(prompt, context.text, context.filetype, config)
 
-  -- Start the job (buffer will be prepared when first chunk arrives)
+  -- Start the job
   local debug = vim.g.context_debug or false
 
   job.start(request, {
