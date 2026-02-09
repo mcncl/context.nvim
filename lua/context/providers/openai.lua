@@ -1,7 +1,7 @@
 -- OpenAI Responses API provider
 local M = {}
 
-function M.build_request(prompt, context_text, filetype, config)
+function M.build_request(prompt, contexts, config)
   -- Check config first, then fall back to env var (lazy evaluation)
   local api_key = config.api_key
   if not api_key or api_key == "" then
@@ -12,7 +12,8 @@ function M.build_request(prompt, context_text, filetype, config)
   end
 
   local system_prompt = require("context.config").get().system_prompt
-  local lang = filetype ~= "" and filetype or ""
+  local providers = require("context.providers")
+  local user_content = providers.format_contexts(prompt, contexts)
 
   local body = vim.fn.json_encode({
     model = config.model or "gpt-4o-mini",
@@ -25,7 +26,7 @@ function M.build_request(prompt, context_text, filetype, config)
       },
       {
         role = "user",
-        content = string.format("Code context:\n```%s\n%s\n```\n\nInstruction: %s", lang, context_text, prompt),
+        content = user_content,
       },
     },
   })

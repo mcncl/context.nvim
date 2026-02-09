@@ -23,6 +23,11 @@ M.defaults = {
     },
   },
 
+  files = {
+    max_file_size = 102400, -- 100KB
+    max_references = 5,
+  },
+
   keymaps = {
     prompt = "<leader>ai",
     cancel = "<leader>ac",

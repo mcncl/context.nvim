@@ -4,6 +4,9 @@ local M = {}
 local config = require("context.config")
 local selection = require("context.selection")
 local stream = require("context.stream")
+local files = require("context.files")
+local completion = require("context.completion")
+local references = require("context.references")
 
 -- Show the prompt UI
 -- @param force_mode string|nil Force a specific context mode ("visual", "line", "file")
@@ -42,10 +45,16 @@ function M.show(force_mode)
     title_pos = "center",
   }
 
+  -- Start async file discovery for @file completion
+  files.load_files()
+
   local winid = vim.api.nvim_open_win(bufnr, true, win_opts)
 
   -- Set up prompt
   vim.fn.prompt_setprompt(bufnr, "> ")
+
+  -- Set up @file completion on this buffer
+  completion.setup_buffer(bufnr)
 
   -- Handle submit
   vim.fn.prompt_setcallback(bufnr, function(text)
@@ -65,12 +74,15 @@ function M.show(force_mode)
     -- Get fresh context in case buffer changed
     local ctx = selection.get_context(force_mode)
 
+    -- Resolve @file references in the prompt
+    local resolved = references.resolve(text, ctx)
+
     -- Get provider config
     local provider_name = cfg.provider
     local provider_config = config.get_provider_config(provider_name)
 
     -- Start streaming with error handling
-    local ok, err = pcall(stream.start, text, ctx, provider_name, provider_config)
+    local ok, err = pcall(stream.start, resolved.clean_prompt, resolved.contexts, provider_name, provider_config)
     if not ok then
       vim.notify("Context: " .. tostring(err), vim.log.levels.ERROR)
     end
@@ -89,6 +101,14 @@ function M.show(force_mode)
       vim.api.nvim_win_close(winid, true)
     end
   end, { buffer = bufnr, noremap = true })
+
+  -- Handle <CR>: accept completion if popup visible, otherwise submit prompt
+  vim.keymap.set("i", "<CR>", function()
+    if vim.fn.pumvisible() == 1 then
+      return vim.api.nvim_replace_termcodes("<C-y>", true, false, true)
+    end
+    return vim.api.nvim_replace_termcodes("<CR>", true, false, true)
+  end, { buffer = bufnr, noremap = true, expr = true })
 
   -- Start in insert mode
   vim.cmd("startinsert")

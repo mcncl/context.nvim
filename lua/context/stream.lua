@@ -151,23 +151,26 @@ end
 
 -- Start streaming a request
 -- @param prompt string The user's prompt
--- @param context table The context from selection.get_context()
+-- @param contexts table Array of context entries from references.resolve()
 -- @param provider_name string The provider to use
 -- @param config table The provider config
-function M.start(prompt, context, provider_name, config)
+function M.start(prompt, contexts, provider_name, config)
   -- Clear any existing state
   clear_state()
 
   -- Get the provider
   local provider = providers.get(provider_name)
   state.bufnr = vim.api.nvim_get_current_buf()
-  state.context = context
+
+  -- Use the primary context (first entry) for extmark placement
+  local primary = contexts[1]
+  state.context = primary
 
   -- Place extmarks to track selection through edits
-  place_marks(state.bufnr, context)
+  place_marks(state.bufnr, primary)
 
   -- Build the request
-  local request = provider.build_request(prompt, context.text, context.filetype, config)
+  local request = provider.build_request(prompt, contexts, config)
 
   -- Start the job
   local debug = vim.g.context_debug or false
