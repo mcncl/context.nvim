@@ -39,6 +39,14 @@ M.defaults = {
     prompt_height = 3,
   },
 
+  spinner = {
+    enabled = true,
+    frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" },
+    interval = 80,      -- ms between frame updates
+    done_delay = 1500,  -- ms to show done/error before clearing
+    minimal = false,    -- true to show only the spinner, no details
+  },
+
   system_prompt = [[You are a code completion assistant. You will receive a code snippet and a user instruction.
 
 CRITICAL: Output ONLY the raw replacement code. Your response will be inserted directly into a code file.

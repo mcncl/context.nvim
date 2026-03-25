@@ -3,6 +3,7 @@ local M = {}
 
 local job = require("context.job")
 local providers = require("context.providers")
+local spinner = require("context.spinner")
 
 -- Namespace for extmarks
 local ns_id = nil
@@ -112,6 +113,12 @@ local function apply_result()
 
   local bufnr = state.bufnr
 
+  -- Ensure the buffer is still valid
+  if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+    vim.notify("Context: buffer no longer valid", vim.log.levels.WARN)
+    return
+  end
+
   -- Read actual positions from extmarks (safe against edits)
   local marks = get_mark_positions()
   if not marks then
@@ -145,8 +152,14 @@ local function apply_result()
   content_lines[1] = before_text .. content_lines[1]
   content_lines[#content_lines] = content_lines[#content_lines] .. after_text
 
-  -- Replace the selection with the result
-  vim.api.nvim_buf_set_lines(bufnr, start_line, end_line + 1, false, content_lines)
+  -- Replace the selection as a single atomic undo step.
+  -- nvim_buf_call ensures undo context targets the correct buffer even if
+  -- the user switched buffers during streaming. undojoin merges with any
+  -- prior plugin-initiated write (future-proofing for incremental streaming).
+  vim.api.nvim_buf_call(bufnr, function()
+    pcall(vim.cmd, "undojoin")
+    vim.api.nvim_buf_set_lines(bufnr, start_line, end_line + 1, false, content_lines)
+  end)
 end
 
 -- Start streaming a request
@@ -168,6 +181,9 @@ function M.start(prompt, contexts, provider_name, config)
 
   -- Place extmarks to track selection through edits
   place_marks(state.bufnr, primary)
+
+  -- Start progress indicator on the last line of the selection
+  spinner.start(state.bufnr, primary.end_line - 1)
 
   -- Build the request
   local request = provider.build_request(prompt, contexts, config)
@@ -197,6 +213,7 @@ function M.start(prompt, contexts, provider_name, config)
       end
       if text then
         update_buffer(text)
+        spinner.update(#state.accumulated_text)
       end
     end,
 
@@ -211,8 +228,12 @@ function M.start(prompt, contexts, provider_name, config)
       if exit_code == 0 then
         -- Success - apply the accumulated result
         apply_result()
-      elseif exit_code ~= 143 then -- 143 is SIGTERM from cancel
+        spinner.finish(true)
+      elseif exit_code == 143 then -- 143 is SIGTERM from cancel
+        -- spinner.cancel() is already called from M.cancel()
+      else
         vim.notify("Context request failed with exit code: " .. exit_code, vim.log.levels.ERROR)
+        spinner.finish(false)
       end
       clear_state()
     end,
@@ -223,6 +244,7 @@ end
 function M.cancel()
   local was_running = job.cancel()
   if was_running then
+    spinner.cancel()
     vim.notify("Context request cancelled", vim.log.levels.INFO)
   end
   clear_state()

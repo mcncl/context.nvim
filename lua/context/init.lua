@@ -4,10 +4,16 @@ local M = {}
 local config = require("context.config")
 local prompt = require("context.prompt")
 local stream = require("context.stream")
+local spinner = require("context.spinner")
 
 -- Setup the plugin
 function M.setup(opts)
   config.setup(opts)
+
+  -- Define highlight groups (default = true lets users override)
+  vim.api.nvim_set_hl(0, "ContextSpinner", { default = true, link = "DiagnosticInfo" })
+  vim.api.nvim_set_hl(0, "ContextSpinnerDone", { default = true, link = "DiagnosticOk" })
+  vim.api.nvim_set_hl(0, "ContextSpinnerError", { default = true, link = "DiagnosticError" })
 
   -- Set up keymaps
   local keymaps = config.get().keymaps
@@ -71,6 +77,20 @@ end
 -- Check if a request is currently active
 function M.is_active()
   return stream.is_active()
+end
+
+-- Get structured spinner status for programmatic use
+function M.get_status()
+  return spinner.get_status()
+end
+
+-- Get formatted status string for statusline integration
+-- Usage with lualine:
+--   lualine_x = {
+--     { require("context").get_status_line, cond = require("context").is_active },
+--   }
+function M.get_status_line()
+  return spinner.get_status_line()
 end
 
 return M
