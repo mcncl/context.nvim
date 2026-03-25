@@ -4,6 +4,7 @@ local M = {}
 local job = require("context.job")
 local providers = require("context.providers")
 local spinner = require("context.spinner")
+local diff = require("context.diff")
 
 -- Namespace for extmarks
 local ns_id = nil
@@ -97,39 +98,35 @@ local function strip_markdown_fences(text)
   return text
 end
 
--- Apply the accumulated result to the buffer (called once at stream end)
-local function apply_result()
+-- Build the replacement lines from accumulated text, respecting mode and column info.
+-- Returns (content_lines, start_line, end_line) or nil on failure.
+local function build_replacement()
   if state.accumulated_text == "" then
-    return
+    return nil
   end
 
-  -- Clean up any markdown fences the LLM might have included
   state.accumulated_text = strip_markdown_fences(state.accumulated_text)
 
   local context = state.context
   if not context then
-    return
+    return nil
   end
 
   local bufnr = state.bufnr
-
-  -- Ensure the buffer is still valid
   if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
     vim.notify("Context: buffer no longer valid", vim.log.levels.WARN)
-    return
+    return nil
   end
 
-  -- Read actual positions from extmarks (safe against edits)
   local marks = get_mark_positions()
   if not marks then
     vim.notify("Context: lost track of selection, aborting", vim.log.levels.WARN)
-    return
+    return nil
   end
 
   local start_line = marks.start_line
   local end_line = marks.end_line
 
-  -- Get content before and after selection
   local lines = vim.api.nvim_buf_get_lines(bufnr, start_line, end_line + 1, false)
   local before_text = ""
   local after_text = ""
@@ -141,24 +138,49 @@ local function apply_result()
     after_text = string.sub(lines[#lines], end_col + 1)
   end
 
-  -- For line mode or file mode, no before/after text
   if context.mode == "line" or context.mode == "file" or context.visual_mode == "V" then
     before_text = ""
     after_text = ""
   end
 
-  -- Build the final content
   local content_lines = vim.split(state.accumulated_text, "\n", { plain = true })
   content_lines[1] = before_text .. content_lines[1]
   content_lines[#content_lines] = content_lines[#content_lines] .. after_text
 
+  return content_lines, start_line, end_line
+end
+
+-- Apply the accumulated result to the buffer directly (instant-apply path)
+local function apply_result()
+  local content_lines, start_line, end_line = build_replacement()
+  if not content_lines then
+    return
+  end
+
+  local bufnr = state.bufnr
+
   -- Replace the selection as a single atomic undo step.
-  -- nvim_buf_call ensures undo context targets the correct buffer even if
-  -- the user switched buffers during streaming. undojoin merges with any
-  -- prior plugin-initiated write (future-proofing for incremental streaming).
   vim.api.nvim_buf_call(bufnr, function()
     pcall(vim.cmd, "undojoin")
     vim.api.nvim_buf_set_lines(bufnr, start_line, end_line + 1, false, content_lines)
+  end)
+end
+
+-- Show a diff review instead of applying directly
+local function show_diff_review()
+  local content_lines, start_line, end_line = build_replacement()
+  if not content_lines then
+    clear_state()
+    return
+  end
+
+  local bufnr = state.bufnr
+  local original_lines = vim.api.nvim_buf_get_lines(bufnr, start_line, end_line + 1, false)
+
+  -- Delegate to the diff module; pass a cleanup callback so stream state
+  -- is cleared when the user accepts or rejects.
+  diff.show(bufnr, start_line, end_line, original_lines, content_lines, function()
+    clear_state()
   end)
 end
 
@@ -168,6 +190,12 @@ end
 -- @param provider_name string The provider to use
 -- @param config table The provider config
 function M.start(prompt, contexts, provider_name, config)
+  -- Block if a diff review is pending
+  if diff.is_active() then
+    vim.notify("Context: diff review in progress — accept or reject first", vim.log.levels.WARN)
+    return
+  end
+
   -- Clear any existing state
   clear_state()
 
@@ -226,22 +254,39 @@ function M.start(prompt, contexts, provider_name, config)
         vim.notify("Context job finished with exit code: " .. exit_code, vim.log.levels.DEBUG)
       end
       if exit_code == 0 then
-        -- Success - apply the accumulated result
-        apply_result()
-        spinner.finish(true)
+        local cfg = require("context.config").get()
+        local diff_enabled = cfg.diff and cfg.diff.enabled ~= false
+
+        if diff_enabled then
+          -- Show diff review — clear_state() is deferred to the diff callback
+          show_diff_review()
+        else
+          -- Instant-apply (legacy behaviour)
+          apply_result()
+          spinner.finish(true)
+          clear_state()
+        end
       elseif exit_code == 143 then -- 143 is SIGTERM from cancel
         -- spinner.cancel() is already called from M.cancel()
+        clear_state()
       else
         vim.notify("Context request failed with exit code: " .. exit_code, vim.log.levels.ERROR)
         spinner.finish(false)
+        clear_state()
       end
-      clear_state()
     end,
   })
 end
 
 -- Cancel the current stream
 function M.cancel()
+  -- If a diff review is active, reject it
+  if diff.is_active() then
+    diff.reject()
+    vim.notify("Context: diff review cancelled", vim.log.levels.INFO)
+    return true
+  end
+
   local was_running = job.cancel()
   if was_running then
     spinner.cancel()
@@ -253,7 +298,7 @@ end
 
 -- Check if a stream is currently active
 function M.is_active()
-  return job.is_running()
+  return job.is_running() or diff.is_active()
 end
 
 return M

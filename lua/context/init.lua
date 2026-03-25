@@ -14,6 +14,7 @@ function M.setup(opts)
   vim.api.nvim_set_hl(0, "ContextSpinner", { default = true, link = "DiagnosticInfo" })
   vim.api.nvim_set_hl(0, "ContextSpinnerDone", { default = true, link = "DiagnosticOk" })
   vim.api.nvim_set_hl(0, "ContextSpinnerError", { default = true, link = "DiagnosticError" })
+  vim.api.nvim_set_hl(0, "ContextSpinnerReview", { default = true, link = "DiagnosticWarn" })
 
   -- Set up keymaps
   local keymaps = config.get().keymaps
@@ -91,6 +92,26 @@ end
 --   }
 function M.get_status_line()
   return spinner.get_status_line()
+end
+
+-- Accept the active diff review
+function M.diff_accept()
+  local diff_mod = require("context.diff")
+  if diff_mod.is_active() then
+    diff_mod.accept()
+  else
+    vim.notify("No diff review active", vim.log.levels.WARN)
+  end
+end
+
+-- Reject the active diff review
+function M.diff_reject()
+  local diff_mod = require("context.diff")
+  if diff_mod.is_active() then
+    diff_mod.reject()
+  else
+    vim.notify("No diff review active", vim.log.levels.WARN)
+  end
 end
 
 return M

@@ -15,7 +15,7 @@ end
 -- Spinner state
 local state = {
   active = false,
-  stage = "idle", -- "idle" | "streaming" | "done" | "error" | "cancelled"
+  stage = "idle", -- "idle" | "streaming" | "review" | "done" | "error" | "cancelled"
   bufnr = nil,
   line = nil, -- 0-indexed line for extmark
   mark_id = nil,
@@ -197,6 +197,16 @@ function M.finish(success)
   end))
 end
 
+-- Transition to review state (diff pending)
+function M.review()
+  if not state.active then
+    return
+  end
+  stop_timer()
+  state.stage = "review"
+  set_virt_text(" ⏳ Review diff to accept or reject", "ContextSpinnerReview")
+end
+
 -- Cancel the spinner immediately
 function M.cancel()
   if not state.active then
@@ -245,6 +255,8 @@ function M.get_status_line()
     return "✓ Context"
   elseif state.stage == "error" then
     return "✗ Context"
+  elseif state.stage == "review" then
+    return "⏳ Review"
   elseif state.stage == "cancelled" then
     return "⊘ Context"
   end
