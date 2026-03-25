@@ -25,6 +25,14 @@ vim.api.nvim_create_user_command("ContextCancel", function()
   require("context").cancel()
 end, { desc = "Cancel active context request" })
 
+vim.api.nvim_create_user_command("ContextDiffAccept", function()
+  require("context").diff_accept()
+end, { desc = "Accept context diff" })
+
+vim.api.nvim_create_user_command("ContextDiffReject", function()
+  require("context").diff_reject()
+end, { desc = "Reject context diff" })
+
 vim.api.nvim_create_user_command("ContextProvider", function(opts)
   if opts.args and opts.args ~= "" then
     require("context").set_provider(opts.args)

@@ -49,6 +49,7 @@ jobs:
           nvim --headless -c "lua require('context.stream')" -c "qa!"
           nvim --headless -c "lua require('context.job')" -c "qa!"
           nvim --headless -c "lua require('context.spinner')" -c "qa!"
+          nvim --headless -c "lua require('context.diff')" -c "qa!"
           nvim --headless -c "lua require('context.providers')" -c "qa!"
           nvim --headless -c "lua require('context.providers.anthropic')" -c "qa!"
           nvim --headless -c "lua require('context.providers.openai')" -c "qa!"
