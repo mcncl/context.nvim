@@ -6,6 +6,9 @@ M.defaults = {
   response_mode = "chat", -- "chat" or "edit"
 
   providers = {
+    amp = {
+      command = "amp",
+    },
     anthropic = {
       api_key = vim.env.ANTHROPIC_API_KEY,
       model = "claude-sonnet-4-5",

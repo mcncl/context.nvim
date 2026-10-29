@@ -26,13 +26,13 @@ end
 -- Provider interface definition (for documentation)
 -- Each provider must implement:
 --
--- build_request(prompt, contexts, config, options) -> { url, headers, body }
---   Build the HTTP request for the API
+-- build_request(prompt, contexts, config, options) -> request
+--   HTTP: { url, headers, body }; CLI: { command, stdin, settings }
 --   contexts is an array of { text, filetype, source, mode }
 --   options optionally supplies system_prompt and history (role/content messages)
 --
--- parse_stream_chunk(chunk) -> string|nil
---   Extract text delta from a streaming chunk, or nil if no text
+-- parse_stream_chunk(chunk) -> text|nil, error|nil
+--   Extract text from a streaming chunk, or nil if no text
 
 -- Format contexts array into a single user message for the LLM
 -- contexts is an array of { text, filetype, source, mode }

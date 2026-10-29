@@ -1,4 +1,4 @@
--- Curl job management for streaming HTTP requests
+-- Job management for streaming HTTP requests and CLI providers
 local M = {}
 
 -- Active job handle
@@ -30,19 +30,42 @@ local function build_curl_args(request)
 end
 
 -- Start a streaming request
--- @param request table { url, headers, body }
+-- @param request table HTTP { url, headers, body } or CLI { command, stdin, settings }
 -- @param callbacks table { on_chunk, on_done, on_error }
 -- @return job_id number
 function M.start(request, callbacks)
   -- Cancel any existing job
   M.cancel()
 
-  local args = build_curl_args(request)
+  local args = request.command and vim.deepcopy(request.command) or build_curl_args(request)
+  if vim.fn.executable(args[1]) ~= 1 then
+    if callbacks.on_error then
+      callbacks.on_error("Executable not found: " .. args[1])
+    end
+    return nil
+  end
+
+  local directory
+  if request.settings then
+    directory = vim.fn.tempname()
+    vim.fn.mkdir(directory, "p", 448)
+    local settings_file = directory .. "/settings.json"
+    vim.fn.writefile({ vim.fn.json_encode(request.settings) }, settings_file)
+    vim.list_extend(args, { "--settings-file", settings_file })
+  end
+
+  local function cleanup()
+    if directory then
+      vim.fn.delete(directory, "rf")
+    end
+  end
 
   local stdout_buffer = ""
+  local stderr_buffer = ""
 
   local job_id
-  job_id = vim.fn.jobstart(args, {
+  local ok, result = pcall(vim.fn.jobstart, args, {
+    cwd = directory,
     on_stdout = function(_, data, _)
       if not data then
         return
@@ -73,7 +96,10 @@ function M.start(request, callbacks)
     on_stderr = function(_, data, _)
       if data and callbacks.on_error then
         local err = table.concat(data, "\n")
-        if err ~= "" then
+        if request.command then
+          -- CLI diagnostics on stderr are not failures unless the process fails.
+          stderr_buffer = stderr_buffer .. err
+        elseif err ~= "" then
           vim.schedule(function()
             callbacks.on_error(err)
           end)
@@ -85,14 +111,21 @@ function M.start(request, callbacks)
       if M.active_job == job_id then
         M.active_job = nil
       end
+      cleanup()
 
       -- Process any remaining data in buffer
       if stdout_buffer ~= "" and callbacks.on_chunk then
+        local remaining = stdout_buffer
         vim.schedule(function()
-          callbacks.on_chunk(stdout_buffer)
+          callbacks.on_chunk(remaining)
         end)
       end
 
+      if request.command and exit_code ~= 0 and stderr_buffer ~= "" and callbacks.on_error then
+        vim.schedule(function()
+          callbacks.on_error(stderr_buffer)
+        end)
+      end
       if callbacks.on_done then
         vim.schedule(function()
           callbacks.on_done(exit_code)
@@ -100,15 +133,21 @@ function M.start(request, callbacks)
       end
     end,
   })
+  job_id = ok and result or -1
 
   if job_id <= 0 then
+    cleanup()
     if callbacks.on_error then
-      callbacks.on_error("Failed to start curl job")
+      callbacks.on_error("Failed to start " .. args[1] .. " job: " .. tostring(result))
     end
     return nil
   end
 
   M.active_job = job_id
+  if request.stdin then
+    vim.fn.chansend(job_id, request.stdin)
+    vim.fn.chanclose(job_id, "stdin")
+  end
   return job_id
 end
 

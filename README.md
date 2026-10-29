@@ -45,10 +45,14 @@ use {
 
 ```lua
 require("context").setup({
-  provider = "anthropic",  -- or "openai", "openai_compat"
+  provider = "anthropic",  -- or "openai", "openai_compat", "amp"
   response_mode = "chat",  -- "edit" to replace code with diff review
 
   providers = {
+    amp = {
+      command = "amp",  -- Executable name or absolute path
+      -- mode = "medium",  -- Optional Amp agent mode
+    },
     anthropic = {
       api_key = vim.env.ANTHROPIC_API_KEY,
       model = "claude-sonnet-4-5",
@@ -92,6 +96,20 @@ require("context").setup({
   },
 })
 ```
+
+### Amp CLI
+
+Install the [Amp CLI](https://ampcode.com/docs/cli) and run `amp login` in your terminal. No separate OpenAI or Anthropic API key is required. Requests use your Amp account and its usage limits or credits.
+
+```lua
+require("context").setup({ provider = "amp" })
+```
+
+Neovim must be able to find `amp` on its PATH. Otherwise, set `providers.amp.command` to its absolute path.
+
+Each question starts a new local CLI process. Selected code, references, and completed chat turns go through stdin. The answer appears below the question when Amp finishes, and the process exits. Ctrl-C or closing chat terminates the active process. There is no persistent CLI session.
+
+All tools are disabled, including file editing, shell commands, and MCP tools. The CLI runs in a temporary directory with isolated settings and IDE context disabled. Your personal and repository Amp settings are not loaded or changed; use `providers.amp.mode` to select an agent mode. Your saved Amp login is reused. Amp stores each request as a private thread and archives it after execution; closing the Neovim chat does not delete those threads.
 
 ## Usage
 
@@ -182,6 +200,7 @@ Run the chat and edit-mode regression checks without API credentials:
 
 ```sh
 nvim --headless -u NONE -l tests/chat.lua
+nvim --headless -u NONE -l tests/amp.lua
 luacheck lua/ tests/ --globals vim
 ```
 

@@ -56,7 +56,9 @@ jobs:
           nvim --headless -c "lua require('context.providers.openai_compat')" -c "qa!"
 
       - name: Test chat and edit workflows
-        run: nvim --headless -u NONE -l tests/chat.lua
+        run: |
+          nvim --headless -u NONE -l tests/chat.lua
+          nvim --headless -u NONE -l tests/amp.lua
 
   lint:
     runs-on: ubuntu-latest

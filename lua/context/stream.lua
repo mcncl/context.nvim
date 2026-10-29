@@ -240,6 +240,7 @@ function M.start(prompt, contexts, provider_name, config, options)
   -- Start the job
   local debug = vim.g.context_debug or false
 
+  state.on_cancel = options.on_cancel
   job.start(request, {
     on_chunk = function(chunk)
       if state ~= request_state then
@@ -251,7 +252,7 @@ function M.start(prompt, contexts, provider_name, config, options)
 
       -- API errors can be JSON responses or SSE data events.
       local data = chunk:match("^data:%s*(.*)") or chunk
-      if data:match('^%s*{') and data:match('"error"') then
+      if not request.command and data:match('^%s*{') and data:match('"error"') then
         local ok, parsed = pcall(vim.fn.json_decode, data)
         if ok and parsed.error then
           local msg = parsed.error.message or vim.fn.json_encode(parsed.error)
@@ -260,7 +261,11 @@ function M.start(prompt, contexts, provider_name, config, options)
         end
       end
 
-      local text = provider.parse_stream_chunk(chunk)
+      local text, parse_error = provider.parse_stream_chunk(chunk)
+      if parse_error then
+        fail(parse_error)
+        return
+      end
       if debug and text then
         vim.notify("Context parsed: " .. text:sub(1, 50), vim.log.levels.DEBUG)
       end
@@ -316,7 +321,6 @@ function M.start(prompt, contexts, provider_name, config, options)
       end
     end,
   })
-  state.on_cancel = options.on_cancel
   return true
 end
 
