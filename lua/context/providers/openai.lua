@@ -1,7 +1,7 @@
 -- OpenAI Responses API provider
 local M = {}
 
-function M.build_request(prompt, contexts, config)
+function M.build_request(prompt, contexts, config, options)
   -- Check config first, then fall back to env var (lazy evaluation)
   local api_key = config.api_key
   if not api_key or api_key == "" then
@@ -11,24 +11,17 @@ function M.build_request(prompt, contexts, config)
     error("OpenAI API key not configured. Set OPENAI_API_KEY or configure in setup()")
   end
 
-  local system_prompt = require("context.config").get().system_prompt
+  options = options or {}
+  local system_prompt = options.system_prompt or require("context.config").get().system_prompt
   local providers = require("context.providers")
-  local user_content = providers.format_contexts(prompt, contexts)
+  local messages = providers.format_messages(prompt, contexts, options)
+  table.insert(messages, 1, { role = "developer", content = system_prompt })
 
   local body = vim.fn.json_encode({
     model = config.model or "gpt-4o-mini",
     max_output_tokens = config.max_tokens or 4096,
     stream = true,
-    input = {
-      {
-        role = "developer",
-        content = system_prompt,
-      },
-      {
-        role = "user",
-        content = user_content,
-      },
-    },
+    input = messages,
   })
 
   return {

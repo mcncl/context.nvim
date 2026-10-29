@@ -1,29 +1,22 @@
 -- OpenAI-compatible API provider (Ollama, LM Studio, etc.)
 local M = {}
 
-function M.build_request(prompt, contexts, config)
+function M.build_request(prompt, contexts, config, options)
   local base_url = config.base_url or "http://localhost:11434/v1"
   -- Remove trailing slash if present
   base_url = base_url:gsub("/$", "")
 
-  local system_prompt = require("context.config").get().system_prompt
+  options = options or {}
+  local system_prompt = options.system_prompt or require("context.config").get().system_prompt
   local providers = require("context.providers")
-  local user_content = providers.format_contexts(prompt, contexts)
+  local messages = providers.format_messages(prompt, contexts, options)
+  table.insert(messages, 1, { role = "system", content = system_prompt })
 
   local body = vim.fn.json_encode({
     model = config.model or "llama3",
     max_tokens = config.max_tokens or 4096,
     stream = true,
-    messages = {
-      {
-        role = "system",
-        content = system_prompt,
-      },
-      {
-        role = "user",
-        content = user_content,
-      },
-    },
+    messages = messages,
   })
 
   local headers = {

@@ -3,6 +3,7 @@ local M = {}
 
 M.defaults = {
   provider = "anthropic",
+  response_mode = "chat", -- "chat" or "edit"
 
   providers = {
     anthropic = {
@@ -37,6 +38,7 @@ M.defaults = {
     prompt_title = "Context",
     prompt_width = 60,
     prompt_height = 3,
+    chat_height = 20,
   },
 
   spinner = {
@@ -51,6 +53,11 @@ M.defaults = {
     enabled = true,     -- false = instant-apply without review
     vertical = true,    -- vertical split (true) or horizontal (false)
   },
+
+  chat_system_prompt = [[You are a helpful coding assistant.
+Answer the user's questions using the supplied code and referenced files as context.
+Use Markdown for explanations and fenced code examples.
+Replies appear in a chat window, not in the user's source file.]],
 
   system_prompt = [[You are a code completion assistant. You will receive a code snippet and a user instruction.
 

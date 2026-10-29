@@ -26,9 +26,10 @@ end
 -- Provider interface definition (for documentation)
 -- Each provider must implement:
 --
--- build_request(prompt, contexts, config) -> { url, headers, body }
+-- build_request(prompt, contexts, config, options) -> { url, headers, body }
 --   Build the HTTP request for the API
 --   contexts is an array of { text, filetype, source, mode }
+--   options optionally supplies system_prompt and history (role/content messages)
 --
 -- parse_stream_chunk(chunk) -> string|nil
 --   Extract text delta from a streaming chunk, or nil if no text
@@ -55,6 +56,12 @@ function M.format_contexts(prompt, contexts)
   table.insert(parts, string.format("Instruction: %s", prompt))
 
   return table.concat(parts, "\n\n")
+end
+
+function M.format_messages(prompt, contexts, options)
+  local messages = vim.deepcopy(options and options.history or {})
+  table.insert(messages, { role = "user", content = M.format_contexts(prompt, contexts) })
+  return messages
 end
 
 -- Validate that a provider implements the required interface

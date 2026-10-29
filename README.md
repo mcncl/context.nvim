@@ -1,6 +1,6 @@
 # context.nvim
 
-A Neovim plugin for AI interaction with scoped context: selected text, current line, or full file. Responses stream in-place, replacing the selection while you can continue editing elsewhere.
+A Neovim plugin for AI interaction with scoped context: selected text, current line, or full file. Replies stream below your question in a floating chat window without changing your code. An optional edit mode offers code replacements with diff review.
 
 ## Installation
 
@@ -46,6 +46,7 @@ use {
 ```lua
 require("context").setup({
   provider = "anthropic",  -- or "openai", "openai_compat"
+  response_mode = "chat",  -- "edit" to replace code with diff review
 
   providers = {
     anthropic = {
@@ -74,11 +75,12 @@ require("context").setup({
   ui = {
     prompt_title = "Context",
     prompt_width = 60,
-    prompt_height = 3,
+    prompt_height = 3,  -- Edit-mode input height
+    chat_height = 20,
   },
 
   diff = {
-    enabled = true,    -- Show diff preview before applying (false = instant-apply)
+    enabled = true,    -- Edit mode only (false = instant-apply)
     vertical = true,   -- Vertical split (false = horizontal)
   },
 
@@ -111,9 +113,27 @@ require("context").setup({
 - `:ContextDiffReject` - Reject the proposed diff
 - `:ContextProvider [name]` - Get or set current provider
 
+### Chat
+
+Open a prompt with `<leader>ai` or a `:Context` command, type your question, and press Enter. The answer streams below the question. Your source buffer is not changed, even when the reply contains code.
+
+Each follow-up includes the previous completed questions and answers. The selected code is captured when you open the chat; `@path/to/file.lua` references add files to individual questions. Only one request runs at a time. You can type your next question while waiting, then submit it after the reply finishes.
+
+| Key | Action |
+|-----|--------|
+| Enter (insert mode) | Send a question, or accept visible `@file` completion |
+| Escape | Leave insert mode to scroll or copy replies |
+| Enter (normal mode) | Return to the input line |
+| Ctrl-C (insert mode) | Cancel the current reply without closing chat |
+| `q` (normal mode) | Close chat and cancel any active reply |
+
+Closing the window discards the conversation. Opening another prompt while chat is open focuses the existing conversation. To use different selected code, close the chat and open a new one.
+
+Use `chat_system_prompt` to customize chat instructions. The existing `system_prompt` setting applies to edit mode.
+
 ### Diff Preview
 
-When a response completes, a side-by-side diff opens showing the original code vs the proposed replacement. From either window:
+Set `response_mode = "edit"` to use the code-replacement workflow. When a response completes, a side-by-side diff opens showing the original code vs the proposed replacement. From either window:
 
 | Key | Action |
 |-----|--------|
@@ -154,6 +174,15 @@ context.diff_accept()      -- Accept active diff review
 context.diff_reject()      -- Reject active diff review
 context.get_status()       -- Structured status for programmatic use
 context.get_status_line()  -- Formatted string for statusline
+```
+
+## Testing
+
+Run the chat and edit-mode regression checks without API credentials:
+
+```sh
+nvim --headless -u NONE -l tests/chat.lua
+luacheck lua/ tests/ --globals vim
 ```
 
 ## License

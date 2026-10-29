@@ -41,7 +41,8 @@ function M.start(request, callbacks)
 
   local stdout_buffer = ""
 
-  local job_id = vim.fn.jobstart(args, {
+  local job_id
+  job_id = vim.fn.jobstart(args, {
     on_stdout = function(_, data, _)
       if not data then
         return
@@ -81,7 +82,9 @@ function M.start(request, callbacks)
     end,
 
     on_exit = function(_, exit_code, _)
-      M.active_job = nil
+      if M.active_job == job_id then
+        M.active_job = nil
+      end
 
       -- Process any remaining data in buffer
       if stdout_buffer ~= "" and callbacks.on_chunk then

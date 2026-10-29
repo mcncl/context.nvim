@@ -189,48 +189,73 @@ end
 -- @param contexts table Array of context entries from references.resolve()
 -- @param provider_name string The provider to use
 -- @param config table The provider config
-function M.start(prompt, contexts, provider_name, config)
+-- @param options table? Chat callbacks, target buffer, system prompt and history
+function M.start(prompt, contexts, provider_name, config, options)
   -- Block if a diff review is pending
   if diff.is_active() then
     vim.notify("Context: diff review in progress — accept or reject first", vim.log.levels.WARN)
     return
   end
 
+  if job.is_running() then
+    vim.notify("Context: request already in progress", vim.log.levels.WARN)
+    return
+  end
+
+  options = options or {}
+  local provider = providers.get(provider_name)
+  local request = provider.build_request(prompt, contexts, config, options)
+
   -- Clear any existing state
   clear_state()
 
-  -- Get the provider
-  local provider = providers.get(provider_name)
-  state.bufnr = vim.api.nvim_get_current_buf()
+  state.bufnr = options.bufnr or vim.api.nvim_get_current_buf()
+  local request_state = state
+  local chat = options.on_chunk ~= nil
 
   -- Use the primary context (first entry) for extmark placement
   local primary = contexts[1]
   state.context = primary
 
-  -- Place extmarks to track selection through edits
-  place_marks(state.bufnr, primary)
+  if not chat then
+    -- Place extmarks to track selection through edits
+    place_marks(state.bufnr, primary)
+  end
+  spinner.start(state.bufnr, options.line or (primary.end_line - 1))
 
-  -- Start progress indicator on the last line of the selection
-  spinner.start(state.bufnr, primary.end_line - 1)
-
-  -- Build the request
-  local request = provider.build_request(prompt, contexts, config)
+  local function fail(message)
+    if state ~= request_state then
+      return
+    end
+    job.cancel()
+    spinner.finish(false)
+    clear_state()
+    if options.on_error then
+      options.on_error(message)
+    else
+      vim.notify("Context error: " .. message, vim.log.levels.ERROR)
+    end
+  end
 
   -- Start the job
   local debug = vim.g.context_debug or false
 
   job.start(request, {
     on_chunk = function(chunk)
+      if state ~= request_state then
+        return
+      end
       if debug then
         vim.notify("Context chunk: " .. chunk:sub(1, 100), vim.log.levels.DEBUG)
       end
 
-      -- Check for API error responses (JSON with "error" field)
-      if chunk:match('^%s*{') and chunk:match('"error"') then
-        local ok, parsed = pcall(vim.fn.json_decode, chunk)
+      -- API errors can be JSON responses or SSE data events.
+      local data = chunk:match("^data:%s*(.*)") or chunk
+      if data:match('^%s*{') and data:match('"error"') then
+        local ok, parsed = pcall(vim.fn.json_decode, data)
         if ok and parsed.error then
           local msg = parsed.error.message or vim.fn.json_encode(parsed.error)
-          vim.notify("Context API error: " .. msg, vim.log.levels.ERROR)
+          fail(msg)
           return
         end
       end
@@ -242,18 +267,35 @@ function M.start(prompt, contexts, provider_name, config)
       if text then
         update_buffer(text)
         spinner.update(#state.accumulated_text)
+        if chat then
+          options.on_chunk(state.accumulated_text)
+        end
       end
     end,
 
     on_error = function(err)
-      vim.notify("Context error: " .. err, vim.log.levels.ERROR)
+      fail(err)
     end,
 
     on_done = function(exit_code)
+      if state ~= request_state then
+        return
+      end
       if debug then
         vim.notify("Context job finished with exit code: " .. exit_code, vim.log.levels.DEBUG)
       end
       if exit_code == 0 then
+        if chat then
+          local text = state.accumulated_text
+          if text == "" then
+            fail("No response received")
+            return
+          end
+          spinner.finish(true)
+          clear_state()
+          options.on_done(text)
+          return
+        end
         local cfg = require("context.config").get()
         local diff_enabled = cfg.diff and cfg.diff.enabled ~= false
 
@@ -270,12 +312,12 @@ function M.start(prompt, contexts, provider_name, config)
         -- spinner.cancel() is already called from M.cancel()
         clear_state()
       else
-        vim.notify("Context request failed with exit code: " .. exit_code, vim.log.levels.ERROR)
-        spinner.finish(false)
-        clear_state()
+        fail("Request failed with exit code: " .. exit_code)
       end
     end,
   })
+  state.on_cancel = options.on_cancel
+  return true
 end
 
 -- Cancel the current stream
@@ -288,11 +330,15 @@ function M.cancel()
   end
 
   local was_running = job.cancel()
+  local on_cancel = state.on_cancel
   if was_running then
     spinner.cancel()
     vim.notify("Context request cancelled", vim.log.levels.INFO)
   end
   clear_state()
+  if on_cancel then
+    on_cancel()
+  end
   return was_running
 end
 

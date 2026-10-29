@@ -1,7 +1,7 @@
 -- Anthropic Claude API provider
 local M = {}
 
-function M.build_request(prompt, contexts, config)
+function M.build_request(prompt, contexts, config, options)
   -- Check config first, then fall back to env var (lazy evaluation)
   local api_key = config.api_key
   if not api_key or api_key == "" then
@@ -11,21 +11,16 @@ function M.build_request(prompt, contexts, config)
     error("Anthropic API key not configured. Set ANTHROPIC_API_KEY or configure in setup()")
   end
 
-  local system_prompt = require("context.config").get().system_prompt
+  options = options or {}
+  local system_prompt = options.system_prompt or require("context.config").get().system_prompt
   local providers = require("context.providers")
-  local user_content = providers.format_contexts(prompt, contexts)
 
   local body = vim.fn.json_encode({
     model = config.model or "claude-sonnet-4-5",
     max_tokens = config.max_tokens or 4096,
     stream = true,
     system = system_prompt,
-    messages = {
-      {
-        role = "user",
-        content = user_content,
-      },
-    },
+    messages = providers.format_messages(prompt, contexts, options),
   })
 
   return {
