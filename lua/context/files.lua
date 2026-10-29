@@ -94,6 +94,11 @@ end
 
 -- Try ripgrep for file discovery
 function M._try_rg(callback)
+  if vim.fn.executable("rg") ~= 1 then
+    callback(nil)
+    return
+  end
+
   local files = {}
   local job_id = vim.fn.jobstart(
     { "rg", "--files", "--follow", "--hidden", "--glob", "!.git" },
@@ -119,7 +124,6 @@ function M._try_rg(callback)
       end,
     }
   )
-  -- jobstart returns -1 if command not found
   if job_id <= 0 then
     callback(nil)
   end
@@ -127,6 +131,11 @@ end
 
 -- Try git ls-files for file discovery
 function M._try_git(callback)
+  if vim.fn.executable("git") ~= 1 then
+    callback(nil)
+    return
+  end
+
   local files = {}
   local job_id = vim.fn.jobstart(
     { "git", "ls-files" },

@@ -21,6 +21,24 @@ package.loaded["context.job"] = {
 
 local context = require("context")
 context.setup({ provider = "openai_compat", spinner = { enabled = false } })
+
+-- File discovery must fall back when optional commands are not installed.
+local files = require("context.files")
+local original_path = vim.env.PATH
+local git_path = vim.fn.tempname()
+vim.fn.mkdir(git_path, "p")
+assert((vim.uv or vim.loop).fs_symlink(vim.fn.exepath("git"), git_path .. "/git"))
+for _, path in ipairs({ original_path, git_path, "" }) do
+  vim.env.PATH = path
+  files.clear_cache()
+  files.load_files()
+  assert(vim.wait(2000, function() return files.get_files() ~= nil end), "File discovery should finish")
+  assert(vim.tbl_contains(files.get_files(), "README.md"), "Discover files with or without rg and git")
+end
+vim.env.PATH = original_path
+vim.fn.delete(git_path, "rf")
+files.clear_cache()
+
 local source = vim.api.nvim_get_current_buf()
 local original = { "local count = 7", "print(count * 3)" }
 vim.api.nvim_buf_set_lines(source, 0, -1, false, original)
